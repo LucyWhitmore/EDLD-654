@@ -1,0 +1,33 @@
+---
+title: "Data Setup"
+author: "Lucy Whitmore"
+date: "11/30/2023"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Simulate Data
+
+
+# Check descriptives
+
+
+# Split into train/test
+```{r}
+# Initial data preparation
+
+require(caret)
+require(recipes)
+
+set.seed(10152021)  # for reproducibility
+
+# Train/Test Split
+  
+loc      <- sample(1:nrow(readability), round(nrow(readability) * 0.9))
+read_tr  <- readability[loc, ]
+read_te  <- readability[-loc, ]
+
+```

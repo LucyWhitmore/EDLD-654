@@ -1,0 +1,124 @@
+---
+title: "Models"
+author: "Lucy Whitmore"
+date: "11/30/2023"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Blueprint 
+```{r}
+require(recipes)
+
+blueprint <- recipe(x     = readability,
+                    vars  = colnames(readability),
+                    roles = c(rep('predictor',768),'outcome')) %>%
+             step_zv(all_numeric()) %>%
+             step_nzv(all_numeric()) %>%
+             step_normalize(all_numeric_predictors())
+
+```
+
+## Cross-Validation
+```{r}
+# Randomly shuffle the data
+    read_tr = read_tr[sample(nrow(read_tr)),]
+
+# Create 10 folds with equal size
+    folds = cut(seq(1,nrow(read_tr)),breaks=10,labels=FALSE)
+  
+# Create the list for each fold 
+    my.indices <- vector('list',10)
+    for(i in 1:10){
+        my.indices[[i]] <- which(folds!=i)
+    }
+      
+cv <- trainControl(method = "cv",
+                   index  = my.indices)
+
+
+```
+
+
+## Unregularized Linear Regression
+```{r}
+
+caret_mod <- caret::train(blueprint, 
+                          data      = read_tr, 
+                          method    = "lm", 
+                          trControl = cv)
+
+                        # For available methods in the train function
+
+                          # ?names(getModelInfo())
+
+                          # ?getModelInfo()$lm
+
+caret_mod
+
+```
+
+```{r}
+predicted_te <- predict(caret_mod, read_te)
+
+rsq_te <- cor(read_te$target,predicted_te)^2
+rsq_te
+
+mae_te <- mean(abs(read_te$target - predicted_te))
+mae_te
+
+rmse_te <- sqrt(mean((read_te$target - predicted_te)^2))
+rmse_te
+
+```
+
+
+## LASSO Regression
+
+```{r}
+grid <- data.frame(alpha = 1, lambda = seq(0.01,3,.01)) 
+grid <- data.frame(alpha = 1, lambda = seq(0.001,0.015,.001)) 
+
+grid
+
+#Note. Remember how glmnet multiplies the lambda by sample size (N). In this case, the sample size is 2834. So, for instance a lambda value of 1 would be 2834. You can try larger values and explore, but in this case a max value of 3 for lambda would be more than enough. I don't think it will improve performance beyond this value
+
+lasso <- caret::train(blueprint, 
+                        data      = read_tr, 
+                        method    = "glmnet", 
+                        trControl = cv,
+                        tuneGrid  = grid)
+```
+
+```{r}
+#lasso2$bestTune
+
+#lasso2$results[6,] #replace 6 with whatever best tune row number is
+require(vip)
+
+vip(lasso, 
+    num_features = 10, 
+    geom = "point") + 
+theme_bw()
+```
+
+```{r}
+# Predcit
+predict_te_lasso <- predict(lasso, read_te)
+
+# Evaluate performace
+rsq_te <- cor(read_te$target,predict_te_lasso)^2
+rsq_te
+
+mae_te <- mean(abs(read_te$target - predict_te_lasso))
+mae_te
+
+rmse_te <- sqrt(mean((read_te$target - predict_te_lasso)^2))
+rmse_te
+
+```
+
+## Gradient Boosting Tree
