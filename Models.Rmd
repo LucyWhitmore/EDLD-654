@@ -8,14 +8,35 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
+# Load data
+```{r}
+brain_data <- rio::import("brain_data.Rda")
+```
+
+# Split into train/test
+```{r}
+# Initial data preparation
+
+require(caret)
+require(recipes)
+
+set.seed(10152021)  # for reproducibility
+
+# Train/Test Split
+  
+loc      <- sample(1:nrow(brain_data), round(nrow(brain_data) * 0.8))
+brain_tr  <- brain_data[loc, ]
+brain_te  <- brain_data[-loc, ]
+
+```
 
 ## Blueprint 
 ```{r}
 require(recipes)
 
-blueprint <- recipe(x     = readability,
-                    vars  = colnames(readability),
-                    roles = c(rep('predictor',768),'outcome')) %>%
+blueprint <- recipe(x     = brain_data,
+                    vars  = colnames(brain_data),
+                    roles = c('outcome',rep('predictor',172))) %>%  # change this
              step_zv(all_numeric()) %>%
              step_nzv(all_numeric()) %>%
              step_normalize(all_numeric_predictors())
@@ -24,11 +45,12 @@ blueprint <- recipe(x     = readability,
 
 ## Cross-Validation
 ```{r}
+set.seed(10152021)  # for reproducibility
 # Randomly shuffle the data
-    read_tr = read_tr[sample(nrow(read_tr)),]
+    brain_tr = brain_tr[sample(nrow(brain_tr)),]
 
 # Create 10 folds with equal size
-    folds = cut(seq(1,nrow(read_tr)),breaks=10,labels=FALSE)
+    folds = cut(seq(1,nrow(brain_tr)),breaks=10,labels=FALSE)
   
 # Create the list for each fold 
     my.indices <- vector('list',10)
@@ -47,31 +69,43 @@ cv <- trainControl(method = "cv",
 ```{r}
 
 caret_mod <- caret::train(blueprint, 
-                          data      = read_tr, 
+                          data      = brain_tr, 
                           method    = "lm", 
                           trControl = cv)
-
-                        # For available methods in the train function
-
-                          # ?names(getModelInfo())
-
-                          # ?getModelInfo()$lm
 
 caret_mod
 
 ```
 
 ```{r}
-predicted_te <- predict(caret_mod, read_te)
+save(caret_mod, file="caret_mod.Rda")
 
-rsq_te <- cor(read_te$target,predicted_te)^2
+```
+
+```{r}
+predicted_te <- predict(caret_mod, brain_te)
+
+prediction_actual <- cbind(as.data.frame(predicted_te), brain_te %>% select(interview_age))
+
+save(prediction_actual, file="prediction_actual.Rda")
+
+rsq_te <- cor(brain_te$interview_age,predicted_te)^2   # change target
 rsq_te
 
-mae_te <- mean(abs(read_te$target - predicted_te))
+mae_te <- mean(abs(brain_te$interview_age - predicted_te))
 mae_te
 
-rmse_te <- sqrt(mean((read_te$target - predicted_te)^2))
+rmse_te <- sqrt(mean((brain_te$interview_age - predicted_te)^2))
 rmse_te
+
+```
+```{r}
+require(vip)
+
+vip(caret_mod, 
+    num_features = 10, 
+    geom = "point") + 
+theme_bw()
 
 ```
 
@@ -79,22 +113,23 @@ rmse_te
 ## LASSO Regression
 
 ```{r}
-grid <- data.frame(alpha = 1, lambda = seq(0.01,3,.01)) 
-grid <- data.frame(alpha = 1, lambda = seq(0.001,0.015,.001)) 
+#grid <- data.frame(alpha = 1, lambda = seq(0.01,3,.01)) 
+grid <- data.frame(alpha = 1, lambda = seq(0,0.015,.001)) 
 
 grid
 
 #Note. Remember how glmnet multiplies the lambda by sample size (N). In this case, the sample size is 2834. So, for instance a lambda value of 1 would be 2834. You can try larger values and explore, but in this case a max value of 3 for lambda would be more than enough. I don't think it will improve performance beyond this value
 
 lasso <- caret::train(blueprint, 
-                        data      = read_tr, 
+                        data      = brain_tr, 
                         method    = "glmnet", 
+                        family    = "gaussian", 
                         trControl = cv,
                         tuneGrid  = grid)
 ```
 
 ```{r}
-#lasso2$bestTune
+lasso$bestTune
 
 #lasso2$results[6,] #replace 6 with whatever best tune row number is
 require(vip)
@@ -106,19 +141,109 @@ theme_bw()
 ```
 
 ```{r}
-# Predcit
-predict_te_lasso <- predict(lasso, read_te)
+# Predict
+predict_te_lasso <- predict(lasso, brain_te)
 
 # Evaluate performace
-rsq_te <- cor(read_te$target,predict_te_lasso)^2
-rsq_te
+rsq_te_lasso <- cor(brain_te$interview_age,predict_te_lasso)^2   # change target
+rsq_te_lasso
 
-mae_te <- mean(abs(read_te$target - predict_te_lasso))
-mae_te
+mae_te_lasso <- mean(abs(brain_te$interview_age - predict_te_lasso))
+mae_te_lasso
 
-rmse_te <- sqrt(mean((read_te$target - predict_te_lasso)^2))
-rmse_te
+rmse_te_lasso <- sqrt(mean((brain_te$interview_age - predict_te_lasso)^2))
+rmse_te_lasso
 
 ```
 
-## Gradient Boosting Tree
+## Bagged Tree
+```{r}
+# Grid, running with all predictors in the data (768)
+
+grid_bag <- expand.grid(mtry = 172, splitrule='variance',min.node.size=2)  # change mtry
+grid_bag
+
+```
+
+```{r}
+# Run the bagged trees by iterating over num.trees using the 
+# values 5, 20, 40, 60,  ..., 200
+  
+  nbags <- c(5,seq(from = 20,to = 200, by = 20))
+    
+  bags <- vector('list',length(nbags))
+    
+    for(i in 1:length(nbags)){
+      
+      bags[[i]] <- caret::train(blueprint,
+                                data      = brain_tr,
+                                method    = 'ranger',
+                                trControl = cv,
+                                tuneGrid  = grid_bag,
+                                num.trees = nbags[i],
+                                max.depth = 60)   # can try to increase max depth
+      
+      print(i)
+      
+    }
+
+    # This can take a few hours to run.
+
+```
+
+```{r}
+
+rmses <- c()
+
+for(i in 1:length(nbags)){
+  
+  rmses[i] = bags[[i]]$results$RMSE
+  
+}
+
+nbags[which.min(rmses)]
+
+
+
+
+predicted_te_bag <- predict(bags[[11]], brain_te) # use whichever is best
+
+# MAE
+mae_te_bag <- mean(abs(brain_te$interview_age - predicted_te_bag))
+mae_te_bag 
+ 
+# RMSE
+rmse_te_bag <- sqrt(mean((brain_te$interview_age - predicted_te_bag)^2))
+rmse_te_bag
+
+# R-square
+rsq_te_bag <- cor(brain_te$interview_age,predicted_te_bag)^2
+rsq_te_bag
+```
+
+
+Table of performance metrics
+```{r}
+
+
+
+mae_te<- .79
+rmse_te<- .97
+rsq_te <- .39
+
+mae_te_lasso<- .79
+rmse_te_lasso<- .97
+rsq_te_lasso <- .36
+
+mae_te_bag <- .88
+rmse_te_bag <- 1.08
+rsq_te_bag <- .22
+
+performance <- data.frame(Model = c("Logistic Regression", "Logistic Regression with LASSO Penalty", "Bagged Trees"),
+                 RSQ = c(rsq_te, rsq_te_lasso, rsq_te_bag),
+                 MAE = c(mae_te, mae_te_lasso, mae_te_bag),
+                 RMSE = c(rmse_te, rmse_te_lasso, rmse_te_bag))
+
+performance
+
+```

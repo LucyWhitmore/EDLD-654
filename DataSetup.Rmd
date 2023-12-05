@@ -7,27 +7,96 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
 ```
+
+
+Load data
+```{r}
+#Load list of included subjects
+struc_include_baseline<-rio::import("/Volumes/devbrainlab/ABCD_Data/ABCD4pt0/abcd_imgincl01.txt") %>%
+  filter(!collection_title=="collection_title") %>% 
+  select(1:11) %>% 
+  mutate(interview_age = as.numeric(interview_age),
+        imgincl_t1w_include = as.numeric(imgincl_t1w_include)) %>% 
+  filter(imgincl_t1w_include == 1) %>% 
+  filter(eventname=="baseline_year_1_arm_1")
+  
+  
+struc_include_followup<-rio::import("/Volumes/devbrainlab/ABCD_Data/ABCD4pt0/abcd_imgincl01.txt") %>%
+  filter(!collection_title=="collection_title") %>% 
+  select(1:11) %>% 
+  mutate(interview_age = as.numeric(interview_age),
+        imgincl_t1w_include = as.numeric(imgincl_t1w_include)) %>% 
+  filter(imgincl_t1w_include == 1) %>% 
+  filter(eventname=="2_year_follow_up_y_arm_1")
+
+
+#Load structural data
+#Filter for volume & area measurements
+
+##### Need to also select scanner/site #####
+smri_baseline <- rio::import("/Volumes/devbrainlab/ABCD_Data/ABCD4pt0/abcd_smrip10201.txt") %>%
+  filter(eventname=="baseline_year_1_arm_1") %>% 
+  filter(!collection_title=="collection_title") %>% 
+  filter(src_subject_id%in%struc_include_baseline$src_subject_id) %>% 
+  select(subjectkey, src_subject_id, interview_age, sex, eventname, matches("vol|area")) %>% 
+  select(-contains(c('cf'))) %>% #remove genetically derived parcellations
+  select(-c(smri_area_cdk_totallh, smri_area_cdk_totalrh, smri_area_cdk_total, smri_vol_scs_lesionlh, smri_vol_scs_lesionrh, smri_vol_scs_wmhint, smri_vol_scs_wmhintlh, smri_vol_scs_wmhintrh, smri_vol_scs_wholeb, smri_vol_scs_latventricles, smri_vol_scs_allventricles, smri_vol_scs_cbwmatterrh, smri_vol_scs_cbwmatterlh, smri_vol_cdk_totallh, smri_vol_cdk_totalrh, smri_vol_cdk_total))
+
+
+smri_followup <- rio::import("/Volumes/devbrainlab/ABCD_Data/ABCD4pt0/abcd_smrip10201.txt") %>%
+  filter(eventname=="2_year_follow_up_y_arm_1") %>% 
+  filter(!collection_title=="collection_title") %>% 
+  filter(src_subject_id %in% struc_include_followup$src_subject_id) %>% 
+  select(subjectkey, src_subject_id, interview_age, sex, eventname, matches("vol|area")) %>% 
+  select(-contains(c('cf'))) %>% #remove genetically derived parcellations
+  select(-c(smri_area_cdk_totallh, smri_area_cdk_totalrh, smri_area_cdk_total, smri_vol_scs_lesionlh, smri_vol_scs_lesionrh, smri_vol_scs_wmhint, smri_vol_scs_wmhintlh, smri_vol_scs_wmhintrh, smri_vol_scs_wholeb, smri_vol_scs_latventricles, smri_vol_scs_allventricles, smri_vol_scs_cbwmatterrh, smri_vol_scs_cbwmatterlh, smri_vol_cdk_totallh, smri_vol_cdk_totalrh, smri_vol_cdk_total))
+
+
+# Create dataframe with data from both wave
+sample_ind_baseline <- sample(seq_len(nrow(smri_baseline)), size = 4500)
+
+baseline <- smri_baseline[sample_ind_baseline, ]
+
+#filter baseline participants out of follow-up
+followup <- smri_followup %>% 
+  filter(!src_subject_id %in% baseline$src_subject_id)
+
+
+multiwave <- rbind(baseline, followup) %>% 
+  select(-c(subjectkey, src_subject_id, sex, eventname)) 
+
+multiwave <- as.data.frame(sapply(multiwave, as.numeric)) %>% 
+  mutate(interview_age = interview_age/12)
+
+```
+
 
 # Simulate Data
-
-
-# Check descriptives
-
-
-# Split into train/test
 ```{r}
-# Initial data preparation
 
-require(caret)
-require(recipes)
+brain_data <- sim_df(multiwave, 10000) %>% 
+  select(-id)
 
-set.seed(10152021)  # for reproducibility
-
-# Train/Test Split
-  
-loc      <- sample(1:nrow(readability), round(nrow(readability) * 0.9))
-read_tr  <- readability[loc, ]
-read_te  <- readability[-loc, ]
+save(brain_data, file="brain_data.Rda")
 
 ```
+
+# Check descriptives
+```{r}
+# age descriptives
+range(brain_data$interview_age)
+
+mean(brain_data$interview_age)
+
+# contains volume
+vol_indx <- grepl('vol', colnames(brain_data))
+sum(vol_indx)
+
+#contains area
+area_indx <- grepl('area', colnames(brain_data))
+sum(area_indx)
+```
+
