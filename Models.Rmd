@@ -99,6 +99,7 @@ rmse_te <- sqrt(mean((brain_te$interview_age - predicted_te)^2))
 rmse_te
 
 ```
+
 ```{r}
 require(vip)
 
@@ -131,7 +132,6 @@ lasso <- caret::train(blueprint,
 ```{r}
 lasso$bestTune
 
-#lasso2$results[6,] #replace 6 with whatever best tune row number is
 require(vip)
 
 vip(lasso, 

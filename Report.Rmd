@@ -78,7 +78,7 @@ For model 2, the hyperparameter alpha was set to 1, and lambda was tuned with va
 For model 3, hyperparameter mtry was set to 172 (the number of predictors), min.node.size was set to 2, and max.depth was set to 60. The num.trees hyperparameter was tuned using values 5, then a sequence from 20 to 200 in increments of 20. 
 
 # Model Fit
-The best fitting model was unregularized linear regression, followed by LASSO regression, then bagged trees. Individual model fits are described below, and shown in Table 1. As the outcome (age) was continuous, no cutoff point was needed. 
+The best fitting model was unregularized linear regression, followed by LASSO regression, then bagged trees. Individual model fits are described below, and shown in Table 1. As the outcome (age) was continuous, no cutoff point was needed. All reported performance metrics are based on performance on the test set. 
 
 ## Model 1 - Unregularized Linear Regression
 Model 1 (unregularized linear regression) performed with an RSQ of 0.39, MAE of 0.79, and RMSE of 0.97 on the test set. 
